@@ -215,10 +215,11 @@ docker compose up -d --build
 docker compose logs -f layover   # watch the digest (also written to /data/candidates.json)
 ```
 
-- **Scheduling** is a tiny stdlib loop (`scheduler.py`) — next `SCHEDULE_DOW`/`HOUR`/`MINUTE`
-  in local time (DST-aware via `TZ`), then sleep. `RUN_ON_START=true` also runs once on
-  `up` so you get an immediate digest to confirm config. `restart: unless-stopped` keeps it
-  alive across reboots.
+- **Scheduling** is a tiny stdlib loop (`scheduler.py`), two modes via `SCHEDULE_MODE`:
+  `weekly` (default — next `SCHEDULE_DOW`/`HOUR`/`MINUTE` in local time, DST-aware via `TZ`) or
+  `interval` for a **continuous scan every `SCAN_INTERVAL_MINUTES`** (e.g. 30). `RUN_ON_START=true`
+  also runs once on `up` so you get an immediate digest to confirm config;
+  `restart: unless-stopped` keeps it alive across reboots.
 - **State persists** in the named volume `layover-data` (`/data`) — the per-folder UID
   watermark (`state.json`) lives there, so each weekly run stays incremental and cheap.
 - **Networking** uses `network_mode: host` so the container reaches AirTrail at
@@ -282,11 +283,11 @@ pull request merged. Requests from early users land at the bottom.
   <br>_Tests:_ dedup key normalisation (`BA0745`≡`BA745`), classify new/duplicate, rebooking flag.
 - [x] **Docker Compose deployment** — self-scheduling stdlib container, state persisted in a volume.
   <br>_Tests:_ `scheduler.next_run` boundary cases; `docker compose config` parses.
+- [x] **Continuous scan every X minutes** — `SCHEDULE_MODE=interval` + `SCAN_INTERVAL_MINUTES`, beside the weekly slot.
+  <br>_Tests:_ `tests/test_scheduler.py` — interval picks the next slot, env parsing, weekly mode unchanged.
 
 **Next**
 
-- [ ] **Continuous scan every X minutes** — interval mode beside the weekly slot (`SCHEDULE_MODE=interval`, `SCAN_INTERVAL_MINUTES`).
-  <br>_Tests:_ interval picks the next slot; env parsing; weekly mode unchanged.
 - [ ] **Notification / webhook on new flight** — optional POST (or Telegram) when a candidate is `new`.
   <br>_Tests:_ fires only for `new` (not duplicate/uncertain); payload shape; no-op when unset.
 - [ ] **Automatic add to AirTrail** — opt-in auto-write for high-confidence, non-rebooking candidates.
@@ -296,7 +297,7 @@ pull request merged. Requests from early users land at the bottom.
 
 **Requested by early users**
 
-- Continuous every-X-minutes scan — _an early user_
+- Continuous every-X-minutes scan — _an early user_ ✅
 - Docker Compose — _an early user_ ✅
 - Automatic flight add — _an early user_ (see "Automatic add to AirTrail")
 - Notification / webhook on new flight — _an early user_
