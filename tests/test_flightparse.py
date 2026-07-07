@@ -22,7 +22,8 @@ def write(tmp, name, text):
     d = os.path.join(tmp, "acct")
     os.makedirs(d, exist_ok=True)
     p = os.path.join(d, name)
-    open(p, "w", encoding="utf-8").write(text)
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write(text)
     return p
 
 
