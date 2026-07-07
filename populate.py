@@ -40,6 +40,7 @@ import sys
 from collections import defaultdict
 
 import airtrail
+import dawarich
 import flightparse
 import notify as notify_mod
 
@@ -134,11 +135,13 @@ def digest(cands, source_label, rebookings):
         if not items:
             return
         print(f"--- {title} ({len(items)}) ---")
+        _loc = {"confirmed": " 📍ok", "contradicted": " 📍?!"}
         for c in items:
             seat = f" seat {c['seatNumber']}" if c.get("seatNumber") else ""
+            loc = _loc.get(c.get("location"), "")
             line = (f"  {c['date']}  {(c['flightNumber'] or '?'):8} "
                     f"{c['from'] or c['from_iata']}->{c['to'] or c['to_iata']}"
-                    f"  {(c['departure'] or '')[:16]}{seat}  [{c['extractor']}]")
+                    f"  {(c['departure'] or '')[:16]}{seat}{loc}  [{c['extractor']}]")
             print(line)
             for issue in c.get("issues", []):
                 print(f"        ! {issue}")
@@ -248,6 +251,11 @@ def main():
     ap.add_argument("--webhook-url", help="POST a JSON digest here when new flights "
                     "are found (or set WEBHOOK_URL)")
     ap.add_argument("--user-id", help="AirTrail user id to assign seats to on writes")
+    ap.add_argument("--validate", dest="validate", action="store_true", default=None,
+                    help="cross-check candidates against Dawarich location history "
+                         "(also via DAWARICH_VALIDATE=1 + DAWARICH_URL/API_KEY)")
+    ap.add_argument("--no-validate", dest="validate", action="store_false",
+                    help="skip Dawarich validation even if configured")
     args = ap.parse_args()
 
     if args.pull:
@@ -256,6 +264,8 @@ def main():
     cands = parse_candidates(args.out_dir)
     existing, source_label = get_existing(args)
     classify(cands, existing)
+    if args.validate if args.validate is not None else dawarich.enabled():
+        dawarich.validate(cands)
     rebookings = find_rebookings(cands)
 
     if args.out:

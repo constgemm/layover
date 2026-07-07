@@ -265,9 +265,13 @@ Phase 1 (above) is deterministic templates + digest, no LLM in the loop. Where t
 
 - **Phase 2 — local-LLM fallback** for the long tail (Ryanair, Wizz, LATAM, OTAs) whose emails
   have no stable structured markup. Still behind the same human-confirm gate.
-- **Phase 3 — location-history validation:** cross-check candidates against
-  [Dawarich](https://github.com/Freika/dawarich) point history to auto-confirm a flight or flag a
-  cancelled/rebooked one (the signal a phone app gets, self-hosted).
+- **Phase 3 — location-history validation** (shipped, opt-in): cross-checks candidates against
+  [Dawarich](https://github.com/Freika/dawarich) point history — confirms a flight when you were
+  near the airport, flags a likely cancellation/rebooking when tracking was active but you were
+  clearly elsewhere (the signal a phone app gets, self-hosted). Advisory only: it annotates and, on
+  a contradiction, adds a review flag that also blocks unattended auto-write — it never writes or
+  deletes. Absence of data is always "unknown", never a false alarm. Enable with
+  `DAWARICH_VALIDATE=1` + `DAWARICH_URL`/`DAWARICH_API_KEY` or `populate.py --validate`.
 - **Miles & More** stays a periodic manual cross-check — highest-precision source, used as a
   completeness checksum, not the engine.
 
