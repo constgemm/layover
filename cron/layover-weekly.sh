@@ -3,7 +3,7 @@
 # dedup -> digest. NEVER writes to AirTrail (writes are manual: populate.py --commit).
 #
 # Wire it up with systemd (cron/layover-weekly.{service,timer}) on airtrail-host, or with
-# launchd (cron/de.gemmingen.layover.weekly.plist) on macOS, or a plain crontab:
+# launchd (cron/com.example.layover.weekly.plist) on macOS, or a plain crontab:
 #     0 7 * * 1  /path/to/layover/cron/layover-weekly.sh
 #
 # Config via env (all optional except that accounts.ini must exist):

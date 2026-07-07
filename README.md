@@ -190,12 +190,31 @@ ghost-flight trap. Dedup normalises flight numbers (`BA0745` ≡ `BA745`) and ma
 flight number + date. If AirTrail is unreachable and no dump is given, candidates are still
 produced and marked `unverified` rather than the run failing.
 
+**Notifications (optional).** When a run finds genuinely new flights, Layover can POST a JSON
+digest to a `WEBHOOK_URL` (Slack/Discord/Telegram-bot/n8n/…) and/or pipe a text summary to a
+`NOTIFY_CMD`. It fires **only** for `new` — never duplicates, uncertain rows, or empty runs — and
+a notifier failure is logged, never fatal.
+
+```bash
+WEBHOOK_URL=https://hooks.example.com/xyz python3 populate.py flight-mail-out/
+```
+
+**Automatic write (optional, opt-in).** `--auto-write` (or `AUTO_WRITE=1`) writes the *safe*
+subset straight to AirTrail: **high-confidence, complete, non-rebooking `new`** flights only.
+Anything uncertain or flagged as a possible rebooking/cancellation is **held** for `--commit`.
+`--dry-run` previews the split without writing (and needs no API key):
+
+```bash
+python3 populate.py flight-mail-out/ --auto-write --dry-run   # preview
+python3 populate.py flight-mail-out/ --auto-write             # write the safe subset
+```
+
 ### Weekly cron
 
 `cron/layover-weekly.sh` runs pull → parse → dedup → digest and logs to
 `flight-mail-out/weekly.log`; set `NOTIFY_CMD` to pipe the digest to Telegram/mail. Install it with
 **systemd** (`cron/layover-weekly.{service,timer}`, Mondays 07:00) on Linux, **launchd**
-(`cron/de.gemmingen.layover.weekly.plist`) on macOS, or a one-line crontab. It runs in
+(`cron/com.example.layover.weekly.plist`) on macOS, or a one-line crontab. It runs in
 digest-only mode — writes stay manual.
 
 ### Run in Docker (recommended for an always-on box)
@@ -285,13 +304,13 @@ pull request merged. Requests from early users land at the bottom.
   <br>_Tests:_ `scheduler.next_run` boundary cases; `docker compose config` parses.
 - [x] **Continuous scan every X minutes** — `SCHEDULE_MODE=interval` + `SCAN_INTERVAL_MINUTES`, beside the weekly slot.
   <br>_Tests:_ `tests/test_scheduler.py` — interval picks the next slot, env parsing, weekly mode unchanged.
+- [x] **Notification / webhook on new flight** — optional `WEBHOOK_URL` POST and/or `NOTIFY_CMD`, fires only for `new`.
+  <br>_Tests:_ `tests/test_notify.py` — new-only gating, payload shape, no-op when unset, transport failure swallowed.
+- [x] **Automatic add to AirTrail** — opt-in `--auto-write` / `AUTO_WRITE` for high-confidence, non-rebooking `new` flights.
+  <br>_Tests:_ `tests/test_populate.py` — only safe subset writable, rebooking/uncertain held, dry-run default.
 
 **Next**
 
-- [ ] **Notification / webhook on new flight** — optional POST (or Telegram) when a candidate is `new`.
-  <br>_Tests:_ fires only for `new` (not duplicate/uncertain); payload shape; no-op when unset.
-- [ ] **Automatic add to AirTrail** — opt-in auto-write for high-confidence, non-rebooking candidates.
-  <br>_Tests:_ only `high` written; rebooking/cancelled skipped; dry-run is the default.
 - [ ] **Local-LLM fallback (Phase 2)** — long tail (Ryanair / Wizz / LATAM / OTAs).
 - [ ] **Dawarich location validation (Phase 3)** — confirm/refute a candidate via point history.
 
@@ -299,8 +318,8 @@ pull request merged. Requests from early users land at the bottom.
 
 - Continuous every-X-minutes scan — _an early user_ ✅
 - Docker Compose — _an early user_ ✅
-- Automatic flight add — _an early user_ (see "Automatic add to AirTrail")
-- Notification / webhook on new flight — _an early user_
+- Automatic flight add — _an early user_ ✅
+- Notification / webhook on new flight — _an early user_ ✅
 
 ---
 

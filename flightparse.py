@@ -20,7 +20,7 @@ Extractors, in order of reliability:
 A candidate is a plain dict (see Candidate.to_dict) with ICAO from/to + airline,
 a canonical date, local departure/arrival timestamps, seat when present, and QA
 provenance (source_file, extractor, confidence, issues). flightReason is always
-"leisure" per Constantin's rule.
+"leisure" per the log's rule.
 
 Usage:
     python3 flightparse.py flight-mail-out/            # -> candidates on stdout (JSON)
