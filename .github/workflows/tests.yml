@@ -1,0 +1,30 @@
+name: tests
+
+# Run the unit suite inside the actual container image, not against a bare Python
+# on the runner — the image is the artifact we ship, so it's the thing we test.
+# tests/ is excluded from the image by .dockerignore, so we mount it read-only
+# into the built image and run unittest from /app (where the modules live).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  container-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the Layover image
+        run: docker build -t layover:ci .
+
+      - name: Run unit tests inside the container
+        run: >
+          docker run --rm
+          -e PYTHONDONTWRITEBYTECODE=1
+          -v "${{ github.workspace }}/tests:/app/tests:ro"
+          -w /app
+          layover:ci
+          python3 -m unittest discover -s tests -v
