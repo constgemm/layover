@@ -1,0 +1,25 @@
+# Keep the build context free of secrets, data, and noise. The Dockerfile copies
+# only the named .py files, but excluding these is defence in depth.
+.git
+.gitignore
+__pycache__/
+*.pyc
+
+# secrets & config
+accounts.ini
+airtrail.ini
+.env
+*.env
+
+# pull output / generated data
+out/
+flight-mail-out/
+candidates.json
+airtrail-flights.json
+
+# repo extras not needed at runtime
+tests/
+cron/
+docs/
+*.md
+LICENSE

@@ -140,15 +140,116 @@ structured flights and post them to your tracker:
 - **[Dawarich](https://github.com/Freika/dawarich)** — its native AirTrail integration then
   draws your whole flight history as arcs on the map, alongside your location timeline.
 
+## Auto-population (Phase 1) — parse, dedup, digest
+
+Beyond the raw sweep, Layover ships a **deterministic** pipeline that turns saved emails into
+candidate flights and tells you what's new — **without ever writing to AirTrail on its own**.
+The design is *propose-then-approve*: a machine proposes, a human approves. A mis-parsed
+cancellation or rebooking would quietly corrupt the map and stats, so nothing reaches the API
+unreviewed.
+
+```mermaid
+flowchart LR
+    O[["📄 out/ (saved emails)"]] --> PARSE
+    PARSE{{"🧩 flightparse.py<br/>deterministic templates"}} --> CAND[candidates.json]
+    CAND --> DEDUP{{"🔁 dedup vs AirTrail<br/>GET /api/flight/list<br/>flight no. + date"}}
+    DEDUP --> DIGEST["🧾 digest:<br/>N new · M uncertain · K known"]
+    DIGEST -. "manual confirm only" .-> WRITE["POST /api/flight/save"]
+```
+
+Three extractors cover the formats that dominate the mailboxes and are stable enough to trust:
+
+| Extractor    | Covers                                                    | How |
+|--------------|-----------------------------------------------------------|-----|
+| `jsonld`     | SWISS · Edelweiss · TAP · airBaltic check-in / boarding   | schema.org `FlightReservation` markup embedded in the email — airline, both airports, times, seat |
+| `lh_checkin` | Lufthansa "Sie sind eingecheckt: LH1769, LCA-MUC, …"      | everything is in the subject line |
+| `ba_eticket` | British Airways "Your Itinerary" / "Reiseplan" e-tickets  | itinerary block (EN one-field-per-line **and** DE concatenated); friendly airport names mapped to codes |
+
+Each candidate is emitted as structured JSON with ICAO `from`/`to`, airline ICAO, canonical
+`date`, local `departure`/`arrival`, `seatNumber` when present, `flightReason: "leisure"`, plus
+provenance (`source_file`, `extractor`, `confidence`, `issues`). Airport/airline codes come from
+a small offline table (`airdata.py`) — no network, no dependencies.
+
+```bash
+# parse only -> candidate JSON on stdout
+python3 flightparse.py flight-mail-out/
+
+# full weekly flow: (optional pull) -> parse -> dedup vs AirTrail -> digest
+cp airtrail.example.ini airtrail.ini && chmod 600 airtrail.ini   # url + API key
+python3 populate.py flight-mail-out/                    # digest only, never writes
+python3 populate.py flight-mail-out/ --pull accounts.ini        # sweep first
+python3 populate.py flight-mail-out/ --flights-json dump.json   # offline dedup, no key
+
+# after reviewing the digest, write the NEW ones — asks 'yes' per flight:
+python3 populate.py flight-mail-out/ --commit
+```
+
+The digest reports **N new, M uncertain, K already in AirTrail**, hides duplicates, and flags
+**possible rebookings/cancellations** (same route + date, different flight number) — the classic
+ghost-flight trap. Dedup normalises flight numbers (`BA0745` ≡ `BA745`) and matches on
+flight number + date. If AirTrail is unreachable and no dump is given, candidates are still
+produced and marked `unverified` rather than the run failing.
+
+### Weekly cron
+
+`cron/layover-weekly.sh` runs pull → parse → dedup → digest and logs to
+`flight-mail-out/weekly.log`; set `NOTIFY_CMD` to pipe the digest to Telegram/mail. Install it with
+**systemd** (`cron/layover-weekly.{service,timer}`, Mondays 07:00) on Linux, **launchd**
+(`cron/de.gemmingen.layover.weekly.plist`) on macOS, or a one-line crontab. It runs in
+digest-only mode — writes stay manual.
+
+### Run in Docker (recommended for an always-on box)
+
+For a set-and-forget deployment, run Layover as a long-lived container that schedules
+itself — no host cron, no `pip install` (the image is pure-stdlib Python). It fires weekly
+(Mondays 07:00 by default), pulls new mail incrementally, and logs the digest. It **never**
+writes to AirTrail.
+
+```bash
+cp .env.example .env             # AirTrail URL + API key, timezone, schedule
+cp accounts.example.ini accounts.ini
+chmod 600 .env accounts.ini      # both hold secrets — git-ignored
+$EDITOR .env accounts.ini
+
+docker compose up -d --build
+docker compose logs -f layover   # watch the digest (also written to /data/candidates.json)
+```
+
+- **Scheduling** is a tiny stdlib loop (`scheduler.py`) — next `SCHEDULE_DOW`/`HOUR`/`MINUTE`
+  in local time (DST-aware via `TZ`), then sleep. `RUN_ON_START=true` also runs once on
+  `up` so you get an immediate digest to confirm config. `restart: unless-stopped` keeps it
+  alive across reboots.
+- **State persists** in the named volume `layover-data` (`/data`) — the per-folder UID
+  watermark (`state.json`) lives there, so each weekly run stays incremental and cheap.
+- **Networking** uses `network_mode: host` so the container reaches AirTrail at
+  `http://vmgpu:3006` over tailnet MagicDNS (the exact name its `ORIGIN` expects) and does
+  outbound IMAP. On a non-tailnet host, drop `network_mode` and add an `extra_hosts` entry.
+- **Secrets:** `accounts.ini` mounts read-only; the AirTrail key comes from `.env`. Neither is
+  baked into the image (see `.dockerignore`) or committed.
+
+Writes stay manual and interactive — after reviewing a digest:
+
+```bash
+docker compose exec layover python3 populate.py /data --commit   # asks yes per flight
+```
+
+### Tests
+
+```bash
+python3 -m unittest discover -s tests    # parser contract, dedup, key normalisation
+```
+
 ## Roadmap & Contributing
 
-Layover currently hands you raw text + PDFs; turning that into structured flights and getting
-them into AirTrail is still a manual (or LLM-assisted) step. Where this is headed next:
+Phase 1 (above) is deterministic templates + digest, no LLM in the loop. Where this is headed:
 
-- **Miles & More integration** — pull flight history directly from Miles & More alongside the
-  inbox sweep, cross-checking against email hits for a more complete record.
-- **Direct AirTrail push** — parse saved emails into structured flight data and POST them
-  straight to AirTrail's `/api/flight/save`, closing the loop from inbox to tracker automatically.
+- **Phase 2 — local-LLM fallback** for the long tail (Ryanair, Wizz, LATAM, OTAs) whose emails
+  have no stable structured markup. Still behind the same human-confirm gate.
+- **Phase 3 — location-history validation:** cross-check candidates against
+  [Dawarich](https://github.com/Freika/dawarich) point history to auto-confirm a flight or flag a
+  cancelled/rebooked one (the signal a phone app gets, self-hosted).
+- **Miles & More** stays a periodic manual cross-check — highest-precision source, used as a
+  completeness checksum, not the engine.
 
 This is a small, actively-developed project — suggestions, issues and pull requests are welcome.
 Open one any time.
@@ -156,13 +257,49 @@ Open one any time.
 ## Security
 
 - `accounts.ini` holds real passwords and is **git-ignored**. Keep it `chmod 600`.
-- `out/` contains your actual emails and PDFs and is **git-ignored** too — never commit it.
+- `airtrail.ini` holds the AirTrail API key and is **git-ignored** too (`chmod 600`); the key can
+  also come from `AIRTRAIL_URL` / `AIRTRAIL_API_KEY` in the environment.
+- `out/` (and `flight-mail-out/`, `candidates.json`) contain your actual emails and flight data and
+  are **git-ignored** — never commit them.
 - Connections are IMAP-over-TLS (`IMAP4_SSL`, port 993) and **read-only** (`BODY.PEEK`,
   `readonly=True`): Layover never marks mail as read, moves it, or deletes anything.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Collaboration roadmap
+
+Features are built **one per branch** (`feature/<name>`), **test-first**: the tests listed
+below must pass (`python3 -m unittest discover -s tests`) before a feature is ticked and its
+pull request merged. Requests from early users land at the bottom.
+
+**Done**
+
+- [x] **Deterministic parser** — Lufthansa / SWISS / BA emails → candidate flights.
+  <br>_Tests:_ `tests/test_flightparse.py` — JSON-LD, LH "eingecheckt", BA e-ticket, seat parse.
+- [x] **Weekly digest, never auto-writes** — parse → dedup vs AirTrail → "N new, M uncertain".
+  <br>_Tests:_ dedup key normalisation (`BA0745`≡`BA745`), classify new/duplicate, rebooking flag.
+- [x] **Docker Compose deployment** — self-scheduling stdlib container, state persisted in a volume.
+  <br>_Tests:_ `scheduler.next_run` boundary cases; `docker compose config` parses.
+
+**Next**
+
+- [ ] **Continuous scan every X minutes** — interval mode beside the weekly slot (`SCHEDULE_MODE=interval`, `SCAN_INTERVAL_MINUTES`).
+  <br>_Tests:_ interval picks the next slot; env parsing; weekly mode unchanged.
+- [ ] **Notification / webhook on new flight** — optional POST (or Telegram) when a candidate is `new`.
+  <br>_Tests:_ fires only for `new` (not duplicate/uncertain); payload shape; no-op when unset.
+- [ ] **Automatic add to AirTrail** — opt-in auto-write for high-confidence, non-rebooking candidates.
+  <br>_Tests:_ only `high` written; rebooking/cancelled skipped; dry-run is the default.
+- [ ] **Local-LLM fallback (Phase 2)** — long tail (Ryanair / Wizz / LATAM / OTAs).
+- [ ] **Dawarich location validation (Phase 3)** — confirm/refute a candidate via point history.
+
+**Requested by early users**
+
+- Continuous every-X-minutes scan — _Nicolaus H._
+- Docker Compose — _Nicolaus H._ ✅
+- Automatic flight add — _Nicolaus H._ (see "Automatic add to AirTrail")
+- Notification / webhook on new flight — _Nicolaus H._
 
 ---
 

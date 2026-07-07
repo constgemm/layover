@@ -2,12 +2,22 @@
 accounts.ini
 *.ini
 !accounts.example.ini
+!airtrail.example.ini
+airtrail.env
+
+# docker env (holds the AirTrail API key)
+.env
+!.env.example
 
 # pull output (contains your actual emails + PDFs)
 out/
 flight-mail-out/
 */state.json
 state.json
+
+# auto-population output (contains real flight data)
+candidates.json
+airtrail-flights.json
 
 # python
 __pycache__/
