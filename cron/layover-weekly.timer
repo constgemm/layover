@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Layover weekly (Mondays 07:00) — flight-email digest
+Documentation=https://github.com/constgemm/layover
+
+[Timer]
+# Monday 07:00 local time; Persistent catches up after downtime (laptop/VM asleep).
+OnCalendar=Mon *-*-* 07:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
