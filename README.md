@@ -140,6 +140,19 @@ structured flights and post them to your tracker:
 - **[Dawarich](https://github.com/Freika/dawarich)** — its native AirTrail integration then
   draws your whole flight history as arcs on the map, alongside your location timeline.
 
+## Roadmap & Contributing
+
+Layover currently hands you raw text + PDFs; turning that into structured flights and getting
+them into AirTrail is still a manual (or LLM-assisted) step. Where this is headed next:
+
+- **Miles & More integration** — pull flight history directly from Miles & More alongside the
+  inbox sweep, cross-checking against email hits for a more complete record.
+- **Direct AirTrail push** — parse saved emails into structured flight data and POST them
+  straight to AirTrail's `/api/flight/save`, closing the loop from inbox to tracker automatically.
+
+This is a small, actively-developed project — suggestions, issues and pull requests are welcome.
+Open one any time.
+
 ## Security
 
 - `accounts.ini` holds real passwords and is **git-ignored**. Keep it `chmod 600`.
