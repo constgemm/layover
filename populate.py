@@ -34,12 +34,14 @@ marks them 'unverified' (dedup skipped) rather than failing.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from collections import defaultdict
 
 import airtrail
 import flightparse
+import notify as notify_mod
 
 
 def pull(accounts_ini, out_dir):
@@ -154,7 +156,28 @@ def digest(cands, source_label, rebookings):
     print("Review, then: python3 populate.py <out> --commit   (writes on typed yes)")
 
 
+def _blocked_reason(c):
+    """Why a NEW candidate must NOT be auto-written (None = safe to auto-write)."""
+    if c.get("confidence") != "high":
+        return "not high-confidence"
+    for issue in c.get("issues", []):
+        low = issue.lower()
+        if "rebooking" in low or "cancel" in low or "ghost" in low:
+            return issue
+    if not (c.get("from") and c.get("to") and c.get("flightNumber") and c.get("date")):
+        return "missing required field"
+    return None
+
+
+def auto_writable(cands):
+    """NEW candidates safe to write unattended: high-confidence, complete, and not
+    flagged as a possible rebooking/cancellation."""
+    return [c for c in cands
+            if c.get("status") == "new" and _blocked_reason(c) is None]
+
+
 def commit(cands, args):
+    """Interactive write of NEW flights — asks yes per flight."""
     url, key = airtrail.load_config(args.url, args.api_key)
     if not url or not key:
         sys.exit("--commit needs AirTrail url + api_key (airtrail.ini or env).")
@@ -165,8 +188,10 @@ def commit(cands, args):
     print(f"\n{len(to_write)} new flight(s). Confirm each (type 'yes' to write):\n")
     for c in to_write:
         payload = airtrail.build_payload(c, user_id=args.user_id)
+        blocked = _blocked_reason(c)
+        flag = f"   ⚠ {blocked}" if blocked else ""
         print(f"  {c['date']} {c['flightNumber']} {c['from']}->{c['to']} "
-              f"{(c['departure'] or '')[:16]}")
+              f"{(c['departure'] or '')[:16]}{flag}")
         if input("    write to AirTrail? [yes/N] ").strip().lower() != "yes":
             print("    skipped.")
             continue
@@ -175,6 +200,33 @@ def commit(cands, args):
             print(f"    written (HTTP {status}).")
         except Exception as exc:  # noqa: BLE001
             print(f"    !! failed: {exc}")
+
+
+def auto_write(cands, args):
+    """Unattended write of the safe subset (opt-in). Skips anything uncertain or
+    flagged as a rebooking/cancellation — those still need a human (--commit)."""
+    writable = auto_writable(cands)
+    held = [c for c in cands if c.get("status") == "new" and c not in writable]
+    print(f"\n[auto-write] {len(writable)} safe to write, {len(held)} held for review.")
+    if args.dry_run:
+        for c in writable:
+            print(f"  would write: {c['date']} {c['flightNumber']} "
+                  f"{c['from']}->{c['to']}")
+        print("[auto-write] dry-run — nothing written.")
+        return
+    url, key = airtrail.load_config(args.url, args.api_key)
+    if not url or not key:
+        sys.exit("--auto-write needs AirTrail url + api_key (airtrail.ini or env).")
+    for c in writable:
+        payload = airtrail.build_payload(c, user_id=args.user_id)
+        try:
+            status, _ = airtrail.post_flight(url, key, payload)
+            print(f"  wrote {c['date']} {c['flightNumber']} {c['from']}->{c['to']} "
+                  f"(HTTP {status})")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  !! {c['flightNumber']} failed: {exc}")
+    for c in held:
+        print(f"  held: {c['date']} {c['flightNumber']} — {_blocked_reason(c)}")
 
 
 def main():
@@ -188,7 +240,14 @@ def main():
     ap.add_argument("-o", "--out", help="write candidate JSON here")
     ap.add_argument("--commit", action="store_true",
                     help="interactively write NEW flights (asks yes per flight)")
-    ap.add_argument("--user-id", help="AirTrail user id to assign seats to on --commit")
+    ap.add_argument("--auto-write", action="store_true",
+                    help="unattended write of the safe subset (high-confidence, "
+                         "non-rebooking NEW flights); opt-in, also via AUTO_WRITE=1")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="with --auto-write, only print what would be written")
+    ap.add_argument("--webhook-url", help="POST a JSON digest here when new flights "
+                    "are found (or set WEBHOOK_URL)")
+    ap.add_argument("--user-id", help="AirTrail user id to assign seats to on writes")
     args = ap.parse_args()
 
     if args.pull:
@@ -207,8 +266,18 @@ def main():
 
     digest(cands, source_label, rebookings)
 
+    # Optional notification — fires only when there are genuinely new flights.
+    notify_mod.notify_new(
+        cands,
+        webhook_url=args.webhook_url or os.environ.get("WEBHOOK_URL"),
+        notify_cmd=os.environ.get("NOTIFY_CMD"),
+    )
+
     if args.commit:
         commit(cands, args)
+    elif args.auto_write or os.environ.get("AUTO_WRITE", "").strip().lower() in (
+            "1", "true", "yes", "on"):
+        auto_write(cands, args)
 
 
 if __name__ == "__main__":

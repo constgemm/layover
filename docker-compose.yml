@@ -33,6 +33,8 @@ services:
       SCHEDULE_MINUTE: ${SCHEDULE_MINUTE:-0}
       RUN_ON_START: ${RUN_ON_START:-true}
       LAYOVER_OUT: /data
+      # WEBHOOK_URL, NOTIFY_CMD and AUTO_WRITE (all optional) are passed through
+      # from .env via env_file above — set them there.
     volumes:
       - ./accounts.ini:/app/accounts.ini:ro   # mailbox passwords (git-ignored)
       - layover-data:/data                     # persists state.json + candidates.json
