@@ -42,6 +42,7 @@ from collections import defaultdict
 import airtrail
 import flightparse
 import notify as notify_mod
+import telegram
 
 
 def pull(accounts_ini, out_dir):
@@ -248,6 +249,11 @@ def main():
     ap.add_argument("--webhook-url", help="POST a JSON digest here when new flights "
                     "are found (or set WEBHOOK_URL)")
     ap.add_argument("--user-id", help="AirTrail user id to assign seats to on writes")
+    ap.add_argument("--telegram-approve", dest="telegram", action="store_true",
+                    default=None, help="ask per-flight approval over Telegram and "
+                    "write the approved ones (also via TELEGRAM_APPROVE=1)")
+    ap.add_argument("--no-telegram-approve", dest="telegram", action="store_false",
+                    help="skip Telegram approval even if configured")
     args = ap.parse_args()
 
     if args.pull:
@@ -272,6 +278,17 @@ def main():
         webhook_url=args.webhook_url or os.environ.get("WEBHOOK_URL"),
         notify_cmd=os.environ.get("NOTIFY_CMD"),
     )
+
+    if args.telegram if args.telegram is not None else telegram.enabled():
+        url, key = airtrail.load_config(args.url, args.api_key)
+        token, chat = telegram.load_config()
+        if token and chat:
+            n = telegram.run_approvals(cands, url, key, token, chat,
+                                       user_id=args.user_id)
+            print(f"[telegram] {n} flight(s) approved & written", file=sys.stderr)
+        else:
+            print("[telegram] TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set",
+                  file=sys.stderr)
 
     if args.commit:
         commit(cands, args)
