@@ -26,7 +26,9 @@ services:
     env_file: .env
     environment:
       TZ: ${TZ:-Europe/Berlin}
-      SCHEDULE_DOW: ${SCHEDULE_DOW:-0}      # 0=Mon .. 6=Sun
+      SCHEDULE_MODE: ${SCHEDULE_MODE:-weekly}      # weekly | interval
+      SCAN_INTERVAL_MINUTES: ${SCAN_INTERVAL_MINUTES:-30}   # interval mode
+      SCHEDULE_DOW: ${SCHEDULE_DOW:-0}             # 0=Mon .. 6=Sun (weekly)
       SCHEDULE_HOUR: ${SCHEDULE_HOUR:-7}
       SCHEDULE_MINUTE: ${SCHEDULE_MINUTE:-0}
       RUN_ON_START: ${RUN_ON_START:-true}

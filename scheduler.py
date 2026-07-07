@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
 """
-scheduler — self-contained weekly runner for Layover (stdlib only).
+scheduler — self-contained runner for Layover (stdlib only).
 
 Designed to be PID 1 in a long-running container: it sleeps until the next
-scheduled slot (default Monday 07:00 local time), then runs the populate.py
-pipeline — incremental IMAP pull -> parse -> AirTrail dedup -> digest — and loops
-forever. It NEVER writes to AirTrail; writes stay manual (populate.py --commit).
+scheduled slot, then runs the populate.py pipeline — incremental IMAP pull ->
+parse -> AirTrail dedup -> digest — and loops forever. It NEVER writes to
+AirTrail; writes stay manual (populate.py --commit).
+
+Two modes:
+    weekly   (default) — one slot a week, default Monday 07:00 local time.
+    interval           — every SCAN_INTERVAL_MINUTES for a continuous scan.
 
 No dependencies beyond the standard library. Local-time scheduling is DST-correct
 when the container has tzdata and TZ is set (see the image / compose).
 
 Environment:
-    LAYOVER_OUT      output + state dir            (default: /data)
-    ACCOUNTS_INI     IMAP config path              (default: accounts.ini)
-    SCHEDULE_DOW     weekday, 0=Mon .. 6=Sun        (default: 0)
-    SCHEDULE_HOUR    hour of day, 0-23 local        (default: 7)
-    SCHEDULE_MINUTE  minute, 0-59                   (default: 0)
-    RUN_ON_START     run once immediately at start  (default: true)
-    TZ               scheduling timezone            (e.g. Europe/Berlin)
+    LAYOVER_OUT           output + state dir            (default: /data)
+    ACCOUNTS_INI          IMAP config path              (default: accounts.ini)
+    SCHEDULE_MODE         weekly | interval             (default: weekly)
+    SCAN_INTERVAL_MINUTES minutes between runs (interval mode)  (default: 30)
+    SCHEDULE_DOW          weekday, 0=Mon .. 6=Sun (weekly)       (default: 0)
+    SCHEDULE_HOUR         hour of day, 0-23 local (weekly)       (default: 7)
+    SCHEDULE_MINUTE       minute, 0-59 (weekly)                  (default: 0)
+    RUN_ON_START          run once immediately at start          (default: true)
+    TZ                    scheduling timezone           (e.g. Europe/Berlin)
 AirTrail dedup config comes from AIRTRAIL_URL / AIRTRAIL_API_KEY (see airtrail.py).
 """
 
@@ -37,6 +43,11 @@ def env_int(name, default):
 
 def env_bool(name, default):
     return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+def next_interval_run(now, interval_minutes):
+    """Next slot in interval mode: `now` + interval (at least one minute)."""
+    return now + timedelta(minutes=max(1, interval_minutes))
 
 
 def next_run(now, dow, hour, minute):
@@ -67,15 +78,23 @@ def run_once(out_dir, accounts_ini):
 def main():
     out_dir = os.environ.get("LAYOVER_OUT", "/data")
     accounts_ini = os.environ.get("ACCOUNTS_INI", "accounts.ini")
+    mode = os.environ.get("SCHEDULE_MODE", "weekly").strip().lower()
+    interval = env_int("SCAN_INTERVAL_MINUTES", 30)
     dow = env_int("SCHEDULE_DOW", 0)
     hour = env_int("SCHEDULE_HOUR", 7)
     minute = env_int("SCHEDULE_MINUTE", 0)
     os.makedirs(out_dir, exist_ok=True)
 
-    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    print(f"[scheduler] Layover — weekly on {days[dow % 7]} "
-          f"{hour:02d}:{minute:02d} (TZ={os.environ.get('TZ', 'system')})",
-          flush=True)
+    if mode == "interval":
+        upcoming = lambda now: next_interval_run(now, interval)  # noqa: E731
+        print(f"[scheduler] Layover — interval mode, every {max(1, interval)} min "
+              f"(TZ={os.environ.get('TZ', 'system')})", flush=True)
+    else:
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        upcoming = lambda now: next_run(now, dow, hour, minute)  # noqa: E731
+        print(f"[scheduler] Layover — weekly on {days[dow % 7]} "
+              f"{hour:02d}:{minute:02d} (TZ={os.environ.get('TZ', 'system')})",
+              flush=True)
 
     if env_bool("RUN_ON_START", True):
         print("[scheduler] initial run on start", flush=True)
@@ -86,10 +105,10 @@ def main():
 
     while True:
         now = datetime.now()
-        nxt = next_run(now, dow, hour, minute)
+        nxt = upcoming(now)
         secs = max(1.0, (nxt - now).total_seconds())
         print(f"[scheduler] next run {nxt.isoformat(timespec='seconds')} "
-              f"(in {secs / 3600:.1f}h)", flush=True)
+              f"(in {secs / 60:.0f} min)", flush=True)
         time.sleep(secs)
         try:
             run_once(out_dir, accounts_ini)
