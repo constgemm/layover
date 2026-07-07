@@ -1,0 +1,14 @@
+# real credentials — never commit
+accounts.ini
+*.ini
+!accounts.example.ini
+
+# pull output (contains your actual emails + PDFs)
+out/
+flight-mail-out/
+*/state.json
+state.json
+
+# python
+__pycache__/
+*.pyc
