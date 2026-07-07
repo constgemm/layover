@@ -31,9 +31,9 @@ fetches. Everything stays on your machine.
 
 ```mermaid
 flowchart LR
-    A[📥 Gmail] --> F
-    B[📥 Workspace] --> F
-    C[📥 IONOS / any IMAP] --> F
+    A[📥 Gmail 1] --> F
+    B[📥 Gmail 2] --> F
+    C[📥 any IMAP] --> F
     F{{"🔎 local filter<br/>airline senders +<br/>booking keywords<br/>(EN + DE)"}} --> O
     O[["📄 out/<br/>text + PDFs<br/>index.csv<br/>state.json"]] --> P
     P["✈️ AirTrail / Dawarich<br/>MyFlightradar24 / CSV"]
