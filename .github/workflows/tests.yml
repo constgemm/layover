@@ -21,10 +21,13 @@ jobs:
         run: docker build -t layover:ci .
 
       - name: Run unit tests inside the container
+        # Override the image ENTRYPOINT (scheduler.py — a forever loop) so the
+        # container runs the tests and exits instead of starting the scheduler.
         run: >
           docker run --rm
+          --entrypoint python3
           -e PYTHONDONTWRITEBYTECODE=1
           -v "${{ github.workspace }}/tests:/app/tests:ro"
           -w /app
           layover:ci
-          python3 -m unittest discover -s tests -v
+          -m unittest discover -s tests -v
