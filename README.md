@@ -291,8 +291,12 @@ python3 -m unittest discover -s tests    # parser contract, dedup, key normalisa
 
 Phase 1 (above) is deterministic templates + digest, no LLM in the loop. Where this is headed:
 
-- **Phase 2 — local-LLM fallback** for the long tail (Ryanair, Wizz, LATAM, OTAs) whose emails
-  have no stable structured markup. Still behind the same human-confirm gate.
+- **Phase 2 — local-LLM fallback** (shipped, opt-in) for the long tail (Ryanair, Wizz, LATAM,
+  OTAs) whose emails have no stable structured markup. It runs **only on emails the deterministic
+  templates miss**, calls an **OpenAI-compatible** endpoint (e.g. Open WebUI on the homelab box),
+  and asks for strict JSON. Every LLM candidate is marked `uncertain` on purpose, so it always lands
+  in the human-review bucket and can never reach the unattended `--auto-write` path. Enable with
+  `LLM_FALLBACK=1` + `LLM_URL`/`LLM_MODEL` (see `.env.example`) or `populate.py --llm`.
 - **Phase 3 — location-history validation:** cross-check candidates against
   [Dawarich](https://github.com/Freika/dawarich) point history to auto-confirm a flight or flag a
   cancelled/rebooked one (the signal a phone app gets, self-hosted).
