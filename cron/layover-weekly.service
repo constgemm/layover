@@ -1,0 +1,20 @@
+[Unit]
+Description=Layover weekly flight-email pull + parse + AirTrail digest
+Documentation=https://github.com/constgemm/layover
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust User and paths to the airtrail-host deployment. The script is self-locating,
+# so WorkingDirectory only needs to be the repo checkout.
+User=%i
+WorkingDirectory=/opt/layover
+ExecStart=/opt/layover/cron/layover-weekly.sh
+# AirTrail dedup config (or drop an airtrail.ini next to the script, chmod 600):
+# Environment=AIRTRAIL_URL=http://airtrail-host:3006
+# Environment=AIRTRAIL_API_KEY=...        # prefer EnvironmentFile for the secret
+# EnvironmentFile=/opt/layover/airtrail.env
+# Optional digest notifier (e.g. a Telegram/mail one-liner reading stdin):
+# Environment=NOTIFY_CMD=/opt/layover/notify.sh
+Nice=10

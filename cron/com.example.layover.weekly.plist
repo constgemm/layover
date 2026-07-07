@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd agent for the Layover weekly run.
+  Install:
+    cp cron/de.gemmingen.layover.weekly.plist ~/Library/LaunchAgents/
+    # edit the path below to your checkout, then:
+    launchctl load ~/Library/LaunchAgents/de.gemmingen.layover.weekly.plist
+  Runs Mondays at 07:00; StartCalendarInterval fires on next wake if asleep.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>de.gemmingen.layover.weekly</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/cgadmin/git/layover/cron/layover-weekly.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- AirTrail dedup config; or place an airtrail.ini next to the script. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAYOVER_DIR</key><string>/Users/cgadmin/git/layover</string>
+    <!-- <key>AIRTRAIL_URL</key><string>http://airtrail-host:3006</string> -->
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/cgadmin/git/layover/flight-mail-out/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/cgadmin/git/layover/flight-mail-out/launchd.err.log</string>
+</dict>
+</plist>

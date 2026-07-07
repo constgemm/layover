@@ -1,0 +1,39 @@
+# Layover weekly flight-email digest — self-contained, always-on.
+#
+# Runs a long-lived container that schedules itself (Mondays 07:00 by default),
+# pulls new mail incrementally, parses candidate flights, dedups against AirTrail,
+# and prints a digest to the logs. It NEVER writes to AirTrail (writes stay manual:
+# `docker compose exec layover python3 populate.py /data --commit`).
+#
+# Setup:
+#   cp .env.example .env            # AirTrail URL + API key, timezone, schedule
+#   chmod 600 .env accounts.ini     # both hold secrets — git-ignored
+#   docker compose up -d --build
+#   docker compose logs -f layover  # watch the digest
+#
+# host networking: lets the container reach AirTrail at http://airtrail-host:3006 via
+# tailnet MagicDNS (same name AirTrail's ORIGIN expects) and reach IMAP outbound.
+# On a non-tailnet host, drop network_mode and add an extra_hosts entry instead.
+
+services:
+  layover:
+    build: .
+    image: layover:local
+    container_name: layover
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      SCHEDULE_DOW: ${SCHEDULE_DOW:-0}      # 0=Mon .. 6=Sun
+      SCHEDULE_HOUR: ${SCHEDULE_HOUR:-7}
+      SCHEDULE_MINUTE: ${SCHEDULE_MINUTE:-0}
+      RUN_ON_START: ${RUN_ON_START:-true}
+      LAYOVER_OUT: /data
+    volumes:
+      - ./accounts.ini:/app/accounts.ini:ro   # mailbox passwords (git-ignored)
+      - layover-data:/data                     # persists state.json + candidates.json
+
+volumes:
+  layover-data:
