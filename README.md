@@ -241,11 +241,39 @@ docker compose logs -f layover   # watch the digest (also written to /data/candi
   `restart: unless-stopped` keeps it alive across reboots.
 - **State persists** in the named volume `layover-data` (`/data`) — the per-folder UID
   watermark (`state.json`) lives there, so each weekly run stays incremental and cheap.
-- **Networking** uses `network_mode: host` so the container reaches AirTrail at
-  `http://airtrail-host:3006` over tailnet MagicDNS (the exact name its `ORIGIN` expects) and does
-  outbound IMAP. On a non-tailnet host, drop `network_mode` and add an `extra_hosts` entry.
+- **Networking** is the default bridge (least privilege — Layover only needs outbound IMAP on 993
+  and one call to AirTrail; it never listens for anything). AirTrail is reached by name via an
+  `extra_hosts` entry that maps `AIRTRAIL_HOST` to the Docker host's gateway, so when AirTrail runs
+  on the **same host** the container reaches it on `:3006`. Set `AIRTRAIL_HOST` to the hostname in
+  AirTrail's `ORIGIN` (see below).
 - **Secrets:** `accounts.ini` mounts read-only; the AirTrail key comes from `.env`. Neither is
   baked into the image (see `.dockerignore`) or committed.
+
+#### Why HTTP, and the Tailscale prerequisite
+
+The AirTrail URL is plain `http://`, not `https://`. That's deliberate: this deployment assumes
+**Layover and AirTrail sit on the same [Tailscale](https://tailscale.com) tailnet** (or the same
+LAN), and [AirTrail is bound to the tailnet/LAN only, never the public internet](https://airtrail.johan.ohly.dk/).
+The Bearer token and flight data therefore never cross an untrusted network in the clear — Tailscale
+(WireGuard) encrypts the wire, so a second TLS layer inside it buys nothing. Using AirTrail's
+MagicDNS name (e.g. `vmgpu`) as `AIRTRAIL_HOST` also matches its `ORIGIN`, so its CSRF/ORIGIN check
+passes.
+
+> **Prerequisite for this setup:** Tailscale installed and logged in on **both** the machine running
+> Layover and the machine running AirTrail (usually the same box), and AirTrail's `ORIGIN` set to the
+> hostname you put in `AIRTRAIL_HOST`.
+
+#### Running it another way
+
+- **AirTrail on a *different* host (tailnet or LAN):** the `host-gateway` mapping points at the local
+  Docker host, so swap it for AirTrail's real address — in `docker-compose.yml` set
+  `extra_hosts: ["<airtrail-host>:100.x.y.z"]` (its tailnet IP) and keep `AIRTRAIL_HOST` matching the
+  `ORIGIN` hostname.
+- **No Tailscale / exposing AirTrail beyond the tailnet:** put AirTrail behind a reverse proxy with a
+  real TLS certificate and set `AIRTRAIL_URL=https://airtrail.example.com`. Never send the Bearer
+  token over plain HTTP across an untrusted network.
+- **No Docker at all:** run `scheduler.py` (or the [weekly cron](#weekly-cron)) directly on the host
+  with `AIRTRAIL_URL`/`AIRTRAIL_API_KEY` in the environment — it's pure stdlib, nothing to install.
 
 Writes stay manual and interactive — after reviewing a digest:
 

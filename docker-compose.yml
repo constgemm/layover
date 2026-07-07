@@ -11,9 +11,13 @@
 #   docker compose up -d --build
 #   docker compose logs -f layover  # watch the digest
 #
-# host networking: lets the container reach AirTrail at http://airtrail-host:3006 via
-# tailnet MagicDNS (same name AirTrail's ORIGIN expects) and reach IMAP outbound.
-# On a non-tailnet host, drop network_mode and add an extra_hosts entry instead.
+# Networking: default bridge (least privilege — the app only needs outbound IMAP
+# 993 and one call to AirTrail). AirTrail is reached by name via extra_hosts:
+# ${AIRTRAIL_HOST} resolves to the Docker host's gateway, so when AirTrail runs on
+# the SAME host the container reaches it on :3006. Keep AIRTRAIL_HOST equal to the
+# hostname in AirTrail's ORIGIN (e.g. its tailnet MagicDNS name) so the Host header
+# matches and CSRF/ORIGIN checks pass. If AirTrail runs on a DIFFERENT machine, map
+# that name to its reachable (tailnet) IP instead of host-gateway. See the README.
 
 services:
   layover:
@@ -22,7 +26,8 @@ services:
     container_name: layover
     init: true
     restart: unless-stopped
-    network_mode: host
+    extra_hosts:
+      - "${AIRTRAIL_HOST:-airtrail-host}:host-gateway"
     env_file: .env
     environment:
       TZ: ${TZ:-Europe/Berlin}
