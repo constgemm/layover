@@ -300,6 +300,12 @@ Phase 1 (above) is deterministic templates + digest, no LLM in the loop. Where t
 - **Phase 3 — location-history validation:** cross-check candidates against
   [Dawarich](https://github.com/Freika/dawarich) point history to auto-confirm a flight or flag a
   cancelled/rebooked one (the signal a phone app gets, self-hosted).
+- **Phase 4 — Telegram approval** (shipped, opt-in): the propose-then-approve gate, moved from the
+  terminal to your phone. For each new, non-contradicted flight it sends a card with every field
+  (missing ones flagged) and an **Approve / Skip** button; on Approve it writes to AirTrail and
+  replies with the new total. Long-poll getUpdates, so the container needs no inbound port. Enable
+  with `TELEGRAM_APPROVE=1` + `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` or `populate.py
+  --telegram-approve`.
 - **Miles & More** stays a periodic manual cross-check — highest-precision source, used as a
   completeness checksum, not the engine.
 
