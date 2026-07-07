@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Copy only the code (no secrets, no output — see .dockerignore).
-COPY layover.py flightparse.py airdata.py airtrail.py notify.py populate.py scheduler.py ./
+COPY layover.py flightparse.py airdata.py airtrail.py llm.py notify.py populate.py scheduler.py ./
 
 # Run unprivileged; /data (state.json watermark + candidates) is a persisted volume.
 RUN useradd --system --uid 10001 --home-dir /app layover \
