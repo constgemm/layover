@@ -41,6 +41,7 @@ from collections import defaultdict
 
 import airtrail
 import flightparse
+import llm
 import notify as notify_mod
 import telegram
 
@@ -50,13 +51,29 @@ def pull(accounts_ini, out_dir):
     subprocess.run([sys.executable, "layover.py", accounts_ini, out_dir], check=True)
 
 
-def parse_candidates(out_dir):
+def parse_candidates(out_dir, use_llm=None):
+    """Deterministic parse of every saved email; for the ones the templates miss,
+    fall back to the local LLM (Phase 2) when it's enabled. LLM candidates are
+    always uncertain — they surface for review, never auto-write.
+
+    use_llm: None -> honour env (llm.enabled()); True/False -> force on/off."""
+    llm_on = llm.enabled() if use_llm is None else use_llm
     raw = []
     for path in flightparse.iter_paths([out_dir]):
         try:
-            raw += [c.to_dict() for c in flightparse.parse_file(path)]
+            file_cands = [c.to_dict() for c in flightparse.parse_file(path)]
         except Exception as exc:  # noqa: BLE001
             print(f"  !! {path}: {exc}", file=sys.stderr)
+            file_cands = []
+        if not file_cands and llm_on:
+            try:
+                file_cands = llm.extract_file(path)
+                if file_cands:
+                    print(f"  [llm] {path}: {len(file_cands)} candidate(s)",
+                          file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001 - LLM problems must not abort the run
+                print(f"  !! llm {path}: {exc}", file=sys.stderr)
+        raw += file_cands
     cands = flightparse.dedup_candidates(raw)
     cands.sort(key=lambda d: (d.get("date") or "", d.get("flightNumber") or ""))
     return cands
@@ -249,6 +266,11 @@ def main():
     ap.add_argument("--webhook-url", help="POST a JSON digest here when new flights "
                     "are found (or set WEBHOOK_URL)")
     ap.add_argument("--user-id", help="AirTrail user id to assign seats to on writes")
+    ap.add_argument("--llm", dest="llm", action="store_true", default=None,
+                    help="force the local-LLM fallback on for emails the templates "
+                         "miss (also via LLM_FALLBACK=1 + LLM_URL/LLM_MODEL)")
+    ap.add_argument("--no-llm", dest="llm", action="store_false",
+                    help="force the LLM fallback off even if configured")
     ap.add_argument("--telegram-approve", dest="telegram", action="store_true",
                     default=None, help="ask per-flight approval over Telegram and "
                     "write the approved ones (also via TELEGRAM_APPROVE=1)")
@@ -259,7 +281,7 @@ def main():
     if args.pull:
         pull(args.pull, args.out_dir)
 
-    cands = parse_candidates(args.out_dir)
+    cands = parse_candidates(args.out_dir, use_llm=args.llm)
     existing, source_label = get_existing(args)
     classify(cands, existing)
     rebookings = find_rebookings(cands)
